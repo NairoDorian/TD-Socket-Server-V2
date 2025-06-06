@@ -83,13 +83,20 @@ const app = uWS.App({
   if (url === '/') {
     res.end('Hello World!');
   } else {
+    // Simple static file serving (you can enhance this as needed)
     res.writeStatus('404 Not Found').end('Not Found');
   }
 }).listen(port, (listenSocket) => {
   if (listenSocket) {
-    console.log(`Server started on port ${port}`);
+    console.log(`Server started on port ${port} in stage ${process.env.NODE_ENV || 'development'}`);
   } else {
     console.log(`Failed to listen to port ${port}`);
+    console.log('Port details:', {
+      envPort: process.env.PORT,
+      actualPort: port,
+      nodeVersion: process.version,
+      platform: process.platform
+    });
     process.exit(1);
   }
 });
