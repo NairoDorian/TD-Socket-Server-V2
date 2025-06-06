@@ -1,77 +1,97 @@
-const uWS = require('uWebSockets.js');
+const http = require("http");
+const express = require("express");
+const WebSocket = require("ws");
 
-const port = parseInt(process.env.PORT) || 3000;
-const isDev = process.env.NODE_ENV !== 'production';
+const app = express();
+app.use(express.static("public"));
 
-let keepAliveTimer;
+const serverPort = parseInt(process.env.PORT) || 3000;
+const server = http.createServer(app);
+
+// Optimized WebSocket server options
+const wss = new WebSocket.Server({ 
+  server,
+  perMessageDeflate: false, // Disable compression for better performance
+  maxPayload: 1024 * 1024 // 1MB max message size
+});
+
+let keepAliveId;
 let clientCount = 0;
 
-const app = uWS.App({
-  compression: uWS.DISABLED, // Disable compression for performance
-}).ws('/*', {
-  message: (ws, message, opCode) => {
-    const msg = Buffer.from(message).toString();
+// Efficient broadcast function
+const broadcast = (sender, message, includeSelf = false) => {
+  const messageStr = message.toString();
+  
+  wss.clients.forEach(client => {
+    if (client.readyState === WebSocket.OPEN && (includeSelf || client !== sender)) {
+      client.send(messageStr);
+    }
+  });
+};
+
+// Keepalive function
+const startKeepAlive = () => {
+  keepAliveId = setInterval(() => {
+    wss.clients.forEach(client => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send("ping");
+      }
+    });
+  }, 50000);
+};
+
+wss.on("connection", (ws) => {
+  clientCount++;
+  
+  if (process.env.NODE_ENV !== "production") {
+    console.log("Connection opened. Client count:", clientCount);
+  }
+
+  // Start keepalive on first connection
+  if (clientCount === 1) {
+    if (process.env.NODE_ENV !== "production") {
+      console.log("First connection: starting keepalive");
+    }
+    startKeepAlive();
+  }
+
+  ws.on("message", (data) => {
+    const message = data.toString();
     
-    if (msg === 'pong') {
-      if (isDev) console.log('keepAlive');
+    if (message === "pong") {
+      if (process.env.NODE_ENV !== "production") {
+        console.log("keepAlive");
+      }
       return;
     }
     
-    // Broadcast to all clients except sender
-    ws.publish('broadcast', message);
-  },
-  
-  open: (ws) => {
-    clientCount++;
-    ws.subscribe('broadcast');
-    
-    if (isDev) {
-      console.log('Connection opened. Client count:', clientCount);
-    }
-    
-    // Start keepalive when first client connects
-    if (clientCount === 1) {
-      if (isDev) console.log('First connection: starting keepalive');
-      keepAliveTimer = setInterval(() => {
-        app.publish('broadcast', 'ping', uWS.OPCODE_TEXT);
-      }, 50000);
-    }
-  },
-  
-  close: (ws) => {
+    broadcast(ws, message);
+  });
+
+  ws.on("close", () => {
     clientCount--;
     
-    if (isDev) {
-      console.log('Connection closed. Client count:', clientCount);
+    if (process.env.NODE_ENV !== "production") {
+      console.log("Connection closed. Client count:", clientCount);
     }
-    
+
     // Stop keepalive when last client disconnects
     if (clientCount === 0) {
-      if (isDev) console.log('Last client disconnected, stopping keepalive');
-      clearInterval(keepAliveTimer);
+      if (process.env.NODE_ENV !== "production") {
+        console.log("Last client disconnected, stopping keepalive");
+      }
+      clearInterval(keepAliveId);
     }
-  }
-}).get('/*', (res, req) => {
-  // Serve static files or simple response
-  const url = req.getUrl();
-  
-  if (url === '/') {
-    res.end('Hello World!');
-  } else {
-    // Simple static file serving (you can enhance this as needed)
-    res.writeStatus('404 Not Found').end('Not Found');
-  }
-}).listen(port, (listenSocket) => {
-  if (listenSocket) {
-    console.log(`Server started on port ${port} in stage ${process.env.NODE_ENV || 'development'}`);
-  } else {
-    console.log(`Failed to listen to port ${port}`);
-    console.log('Port details:', {
-      envPort: process.env.PORT,
-      actualPort: port,
-      nodeVersion: process.version,
-      platform: process.platform
-    });
-    process.exit(1);
-  }
+  });
+
+  ws.on("error", (error) => {
+    console.log("WebSocket error:", error);
+    clientCount--;
+  });
+});
+
+app.get("/", (req, res) => res.send("Hello World!"));
+
+server.listen(serverPort, '0.0.0.0', () => {
+  console.log(`Server started on port ${serverPort} in stage ${process.env.NODE_ENV || 'development'}`);
 });
