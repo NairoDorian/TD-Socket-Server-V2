@@ -76,7 +76,7 @@ const app = uWS.App({
     if (isDev) console.log('WebSocket pong frame received');
   }
   
-/* }).get('/*', (res, req) => {
+}).get('/*', (res, req) => {
   // Serve static files or simple response
   const url = req.getUrl();
   
@@ -84,9 +84,9 @@ const app = uWS.App({
     res.end('Hello World!');
   } else {
     res.writeStatus('404 Not Found').end('Not Found');
-  } */
-}).listen(port, (success) => {
-  if (success) {
+  }
+}).listen(port, (listenSocket) => {
+  if (listenSocket) {
     console.log(`Server started on port ${port}`);
   } else {
     console.log(`Failed to listen to port ${port}`);
