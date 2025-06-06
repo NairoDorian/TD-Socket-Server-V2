@@ -1,6 +1,6 @@
 const uWS = require('uWebSockets.js');
 
-const port = process.env.PORT || 3000;
+const port = parseInt(process.env.PORT) || 3000;
 const isDev = process.env.NODE_ENV !== 'production';
 
 let keepAliveTimer;
