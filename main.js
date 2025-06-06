@@ -1,6 +1,6 @@
 const uWS = require('uWebSockets.js');
 
-const port = process.env.PORT || 3000;
+const port = parseInt(process.env.PORT) || 3000;
 const isDev = process.env.NODE_ENV !== 'production';
 
 let keepAliveTimer;
@@ -34,7 +34,7 @@ const app = uWS.App({
       if (isDev) console.log('First connection: starting keepalive');
       keepAliveTimer = setInterval(() => {
         app.publish('broadcast', 'ping', uWS.OPCODE_TEXT);
-      }, 5000);
+      }, 50000);
     }
   },
   
@@ -61,10 +61,17 @@ const app = uWS.App({
     // Simple static file serving (you can enhance this as needed)
     res.writeStatus('404 Not Found').end('Not Found');
   }
-}).listen(port, (token) => {
-  if (token) {
+}).listen(port, (listenSocket) => {
+  if (listenSocket) {
     console.log(`Server started on port ${port} in stage ${process.env.NODE_ENV || 'development'}`);
   } else {
     console.log(`Failed to listen to port ${port}`);
+    console.log('Port details:', {
+      envPort: process.env.PORT,
+      actualPort: port,
+      nodeVersion: process.version,
+      platform: process.platform
+    });
+    process.exit(1);
   }
 });
