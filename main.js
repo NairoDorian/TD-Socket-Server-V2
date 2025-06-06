@@ -1,244 +1,70 @@
 const uWS = require('uWebSockets.js');
-const fs = require('fs');
-const path = require('path');
 
-const serverPort = process.env.PORT || 3000;
-const wsPort = 5001; // WebSocket port for development mode
-const publicDir = path.join(__dirname, 'public');
+const port = process.env.PORT || 3000;
+const isDev = process.env.NODE_ENV !== 'production';
 
-let keepAliveId;
-const connectedClients = new Set();
+let keepAliveTimer;
+let clientCount = 0;
 
-// Broadcast to all connected clients except the sender (unless includeSelf is true)
-const broadcast = (sender, message, includeSelf = false) => {
-  for (const client of connectedClients) {
-    if (includeSelf || client !== sender) {
-      try {
-        client.send(message);
-      } catch (error) {
-        // Remove client if sending fails (connection closed)
-        connectedClients.delete(client);
-      }
-    }
-  }
-};
-
-// Ping all clients every 50 seconds to keep the connection alive
-const keepServerAlive = () => {
-  keepAliveId = setInterval(() => {
-    for (const client of connectedClients) {
-      try {
-        client.send('ping');
-      } catch (error) {
-        // Remove client if sending fails (connection closed)
-        connectedClients.delete(client);
-      }
-    }
-  }, 50000);
-};
-
-// Helper function to get MIME type based on file extension
-const getMimeType = (filePath) => {
-  const ext = path.extname(filePath).toLowerCase();
-  const mimeTypes = {
-    '.html': 'text/html',
-    '.js': 'text/javascript',
-    '.css': 'text/css',
-    '.json': 'application/json',
-    '.png': 'image/png',
-    '.jpg': 'image/jpeg',
-    '.gif': 'image/gif',
-    '.svg': 'image/svg+xml',
-    '.wav': 'audio/wav',
-    '.mp4': 'video/mp4',
-    '.woff': 'application/font-woff',
-    '.ttf': 'application/font-ttf',
-    '.eot': 'application/vnd.ms-fontobject',
-    '.otf': 'application/font-otf',
-    '.wasm': 'application/wasm'
-  };
-  return mimeTypes[ext] || 'application/octet-stream';
-};
-
-// Create uWebSockets.js app
 const app = uWS.App({
-  // Optional SSL configuration
-  // key_file_name: 'misc/key.pem',
-  // cert_file_name: 'misc/cert.pem',
-});
-  // WebSocket configuration - different behavior for production vs development
-if (process.env.NODE_ENV === 'production') {
-  // Production: WebSocket and HTTP on same port
-  app.ws('/*', {
-    compression: uWS.SHARED_COMPRESSOR,
-    maxCompressedSize: 64 * 1024,
-    maxBackpressure: 64 * 1024,
-    maxPayloadLength: 16 * 1024,
-    idleTimeout: 60,
+  compression: uWS.DISABLED, // Disable compression for performance
+}).ws('/*', {
+  message: (ws, message, opCode) => {
+    const msg = Buffer.from(message).toString();
     
-    open: (ws) => {
-      connectedClients.add(ws);
-      
-      if (process.env.NODE_ENV !== 'production') {
-        console.log('Connection Opened. Client count:', connectedClients.size);
-      }
-
-      if (connectedClients.size === 1) {
-        if (process.env.NODE_ENV !== 'production') {
-          console.log('First connection: starting keepalive');
-        }
-        keepServerAlive();
-      }
-    },
-    
-    message: (ws, message, opCode) => {
-      const messageStr = Buffer.from(message).toString();
-      
-      if (messageStr === 'pong') {
-        if (process.env.NODE_ENV !== 'production') {
-          console.log('keepAlive');
-        }
-        return;
-      }
-      
-      broadcast(ws, messageStr);
-    },
-    
-    close: (ws, code, message) => {
-      connectedClients.delete(ws);
-      
-      if (process.env.NODE_ENV !== 'production') {
-        console.log('Closing connection. Client count:', connectedClients.size);
-      }
-      
-      if (connectedClients.size === 0) {
-        if (process.env.NODE_ENV !== 'production') {
-          console.log('Last client disconnected, stopping keepalive');
-        }
-        clearInterval(keepAliveId);
-      }
-    }
-  });
-}
-  // // HTTP routes
-app.get('/', (res, req) => {
-  // Handle root route
-  res.end('Hello World!');
-}).get('/*', (res, req) => {
-  // Static file serving
-  const url = req.getUrl();
-  const filePath = path.join(publicDir, url === '/' ? 'index.html' : url);
-  
-  // Security check - prevent directory traversal
-  if (!filePath.startsWith(publicDir)) {
-    res.writeStatus('403 Forbidden').end('Forbidden');
-    return;
-  }
-  
-  // Check if file exists and serve it
-  fs.access(filePath, fs.constants.F_OK, (err) => {
-    if (err) {
-      res.writeStatus('404 Not Found').end('File not found');
+    if (msg === 'pong') {
+      if (isDev) console.log('keepAlive');
       return;
     }
     
-    fs.readFile(filePath, (err, data) => {
-      if (err) {
-        res.writeStatus('500 Internal Server Error').end('Internal Server Error');
-        return;
-      }
-      
-      const mimeType = getMimeType(filePath);
-      res.writeHeader('Content-Type', mimeType).end(data);
-    });
-  });
-});
-
-// Start servers based on environment
-if (process.env.NODE_ENV === 'production') {
-  // Production: Single server with both HTTP and WebSocket
-  app.listen(serverPort, (token) => {
-    if (token) {
-      console.log(`Server started on port ${serverPort} in stage ${process.env.NODE_ENV}`);
-    } else {
-      console.log(`Failed to listen to port ${serverPort}`);
-    }
-  });
-} else {
-  // Development: HTTP server on one port, WebSocket on another
-  app.listen(serverPort, (token) => {
-    if (token) {
-      console.log(`HTTP Server started on port ${serverPort} in stage ${process.env.NODE_ENV || 'development'}`);
-    } else {
-      console.log(`Failed to listen to port ${serverPort}`);
-    }
-  });
+    // Broadcast to all clients except sender
+    ws.publish('broadcast', message);
+  },
   
-  // Separate WebSocket server for development
-  const wsApp = uWS.App().ws('/*', {
-    compression: uWS.SHARED_COMPRESSOR,
-    maxCompressedSize: 64 * 1024,
-    maxBackpressure: 64 * 1024,
-    maxPayloadLength: 16 * 1024,
-    idleTimeout: 60,
+  open: (ws) => {
+    clientCount++;
+    ws.subscribe('broadcast');
     
-    open: (ws) => {
-      connectedClients.add(ws);
-      
-      if (process.env.NODE_ENV !== 'production') {
-        console.log('Connection Opened. Client count:', connectedClients.size);
-      }
-
-      if (connectedClients.size === 1) {
-        if (process.env.NODE_ENV !== 'production') {
-          console.log('First connection: starting keepalive');
-        }
-        keepServerAlive();
-      }
-    },
-    
-    message: (ws, message, opCode) => {
-      const messageStr = Buffer.from(message).toString();
-      
-      if (messageStr === 'pong') {
-        if (process.env.NODE_ENV !== 'production') {
-          console.log('keepAlive');
-        }
-        return;
-      }
-      
-      broadcast(ws, messageStr);
-    },
-    
-    close: (ws, code, message) => {
-      connectedClients.delete(ws);
-      
-      if (process.env.NODE_ENV !== 'production') {
-        console.log('Closing connection. Client count:', connectedClients.size);
-      }
-      
-      if (connectedClients.size === 0) {
-        if (process.env.NODE_ENV !== 'production') {
-          console.log('Last client disconnected, stopping keepalive');
-        }
-        clearInterval(keepAliveId);
-      }
+    if (isDev) {
+      console.log('Connection opened. Client count:', clientCount);
     }
-  }).listen(wsPort, (token) => {
-    if (token) {
-      console.log(`WebSocket Server started on port ${wsPort} in stage ${process.env.NODE_ENV || 'development'}`);
-    } else {
-      console.log(`Failed to listen to WebSocket port ${wsPort}`);
+    
+    // Start keepalive when first client connects
+    if (clientCount === 1) {
+      if (isDev) console.log('First connection: starting keepalive');
+      keepAliveTimer = setInterval(() => {
+        app.publish('broadcast', 'ping', uWS.OPCODE_TEXT);
+      }, 5000);
     }
-  });
-}
-
-// Graceful shutdown
-process.on('SIGINT', () => {
-  console.log('Shutting down server...');
-  if (keepAliveId) {
-    clearInterval(keepAliveId);
+  },
+  
+  close: (ws) => {
+    clientCount--;
+    
+    if (isDev) {
+      console.log('Connection closed. Client count:', clientCount);
+    }
+    
+    // Stop keepalive when last client disconnects
+    if (clientCount === 0) {
+      if (isDev) console.log('Last client disconnected, stopping keepalive');
+      clearInterval(keepAliveTimer);
+    }
   }
-  uWS.us_listen_socket_close(app);
-  process.exit(0);
+}).get('/*', (res, req) => {
+  // Serve static files or simple response
+  const url = req.getUrl();
+  
+  if (url === '/') {
+    res.end('Hello World!');
+  } else {
+    // Simple static file serving (you can enhance this as needed)
+    res.writeStatus('404 Not Found').end('Not Found');
+  }
+}).listen(port, (token) => {
+  if (token) {
+    console.log(`Server started on port ${port} in stage ${process.env.NODE_ENV || 'development'}`);
+  } else {
+    console.log(`Failed to listen to port ${port}`);
+  }
 });
