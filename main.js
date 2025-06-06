@@ -1,7 +1,7 @@
 const uWS = require('uWebSockets.js');
 
-const port = parseInt(process.env.PORT) || 3000;
-const isDev = process.env.NODE_ENV !== 'production';
+const port = process.env.PORT || 3000;
+const isDev = true;
 
 let keepAliveTimer;
 let clientCount = 0;
@@ -76,7 +76,7 @@ const app = uWS.App({
     if (isDev) console.log('WebSocket pong frame received');
   }
   
-}).get('/*', (res, req) => {
+/* }).get('/*', (res, req) => {
   // Serve static files or simple response
   const url = req.getUrl();
   
@@ -85,18 +85,12 @@ const app = uWS.App({
   } else {
     // Simple static file serving (you can enhance this as needed)
     res.writeStatus('404 Not Found').end('Not Found');
-  }
-}).listen(port, (listenSocket) => {
-  if (listenSocket) {
-    console.log(`Server started on port ${port} in stage ${process.env.NODE_ENV || 'development'}`);
+  } */
+}).listen(port, (success) => {
+  if (success) {
+    console.log(`Server started on port ${port} ${success}`);
   } else {
     console.log(`Failed to listen to port ${port}`);
-    console.log('Port details:', {
-      envPort: process.env.PORT,
-      actualPort: port,
-      nodeVersion: process.version,
-      platform: process.platform
-    });
     process.exit(1);
   }
 });
