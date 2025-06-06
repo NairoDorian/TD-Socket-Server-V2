@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "description": "uWebSockets.js Node Server Example",
   "main": "main.js",
-  "author": "Torin Blankensmith",
-  "license": "MIT",
+  "author": "Nairod Dorian",
+  "license": "FREE",
   "private": false,
   "scripts": {
     "start": "node ./main.js",
