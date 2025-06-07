@@ -1,96 +1,188 @@
 const uWS = require('uWebSockets.js');
 
 const port = parseInt(process.env.PORT) || 3000;
+///const isDev = process.env.NODE_ENV !== 'production';
+const isDev = false;
 
-const isDev = process.env.NODE_ENV !== 'production';
+// Store authenticated receivers
+const authenticatedReceivers = new Set();
+const RECEIVER_TOKEN = process.env.RECEIVER_TOKEN || 'SECRET_RECEIVER_TOKEN_123';
 
-let keepAliveTimer;
 let clientCount = 0;
 
 const app = uWS.App({
-  compression: uWS.DISABLED, // Disable compression for performance
+  compression: uWS.DISABLED,
 }).ws('/*', {
   message: (ws, message, opCode) => {
-    const msg = Buffer.from(message).toString();
-    
-    if (isDev) {
-      console.log('Received message:', msg);
+    try {
+      const msg = Buffer.from(message).toString();
+      
+      if (isDev) {
+        console.log('Received message:', msg);
+      }
+      
+      // Handle ping/pong
+      if (msg === 'ping') {
+        if (isDev) console.log('Client ping received, sending pong response');
+        ws.send('pong');
+        return;
+      }
+      
+      if (msg === 'pong') {
+        if (isDev) console.log('Client pong received');
+        return;
+      }
+      
+      // Handle authentication for privileged receiver
+      if (msg.startsWith('AUTH:')) {
+        const token = msg.substring(5); // Remove 'AUTH:' prefix
+        
+        if (token === RECEIVER_TOKEN) {
+          // Mark this client as authenticated receiver
+          ws.isReceiver = true;
+          authenticatedReceivers.add(ws);
+          
+          // Subscribe to the privileged topic
+          ws.subscribe('privileged-monitor');
+          
+          //ws.send('AUTH:SUCCESS');
+          if (isDev) console.log('Client authenticated as privileged receiver');
+        } else {
+          //ws.send('AUTH:FAILED');
+          if (isDev) console.log('Client authentication failed');
+        }
+        return;
+      }
+      
+      // Handle regular messages
+      if (!ws.isReceiver) {
+        // Regular client sent a message
+        // Send to ALL authenticated receivers only
+        if (authenticatedReceivers.size > 0) {
+        
+          // Parse the original message to extract x and y coordinates
+          const originalMessage = JSON.parse(msg);
+          
+          // Create the flattened message structure
+          const messageWithSender = JSON.stringify({
+            senderId: ws.clientId || 'unknown',
+            x: originalMessage.x,
+            y: originalMessage.y
+          });
+          
+          app.publish('privileged-monitor', messageWithSender, uWS.OPCODE_TEXT);
+          
+          if (isDev) {
+            console.log(`Message from regular client forwarded to ${authenticatedReceivers.size} authenticated receiver(s)`);
+          }
+          
+        }
+        /* 
+        // Optionally send confirmation back to sender
+        ws.send(JSON.stringify({
+          type: 'message_sent',
+          status: 'delivered_to_receivers'
+        })); */
+        
+      } else {
+        // Message from authenticated receiver
+        // You can decide what to do with these messages
+        // For now, let's just log them
+        if (isDev) {
+          console.log('Message from privileged receiver:', msg);
+        }
+        
+        // Optionally, you could broadcast receiver messages to other receivers
+        // or handle them differently
+      }
+      
+    } catch (error) {
+      console.error('Error processing message:', error);
+      /* ws.send(JSON.stringify({
+        type: 'error',
+        message: 'Failed to process message'
+      })); */
     }
-    
-    // Handle client ping requests - respond immediately with pong
-    if (msg === 'ping') {
-      if (isDev) console.log('Client ping received, sending pong response');
-      ws.send('pong');
-      return;
-    }
-    
-    // Handle keepalive pong responses from clients
-    if (msg === 'pong') {
-      if (isDev) console.log('keepAlive pong received');
-      return;
-    }
-    
-    // Broadcast all other messages to all clients except sender
-    ws.publish('broadcast', message);
   },
   
   open: (ws) => {
     clientCount++;
-    ws.subscribe('broadcast');
+    
+    // Assign a unique ID to each client
+    //ws.clientId = `client_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+    ws.clientId = Math.random().toString(36).substring(2, 12);
+    ws.isReceiver = false;
     
     if (isDev) {
-      console.log('Connection opened. Client count:', clientCount);
+      console.log(`Connection opened. Client ID: ${ws.clientId}, Total clients: ${clientCount}`);
     }
     
-    // Start keepalive when first client connects
-    if (clientCount === 1) {
-      if (isDev) console.log('First connection: starting keepalive');
-      keepAliveTimer = setInterval(() => {
-        if (isDev) console.log('Sending keepalive ping to all clients');
-        app.publish('broadcast', 'ping', uWS.OPCODE_TEXT);
-      }, 50000);
-    }
+    /* // Send welcome message with client ID
+    ws.send(JSON.stringify({
+      type: 'connection_established',
+      clientId: ws.clientId,
+      message: 'Connected! Send AUTH:your_token to become privileged receiver'
+    })); */
   },
   
   close: (ws) => {
     clientCount--;
     
-    if (isDev) {
-      console.log('Connection closed. Client count:', clientCount);
+    // Clean up if this was an authenticated receiver
+    if (ws.isReceiver) {
+      authenticatedReceivers.delete(ws);
+      if (isDev) {
+        console.log(`Privileged receiver disconnected. Remaining receivers: ${authenticatedReceivers.size}`);
+      }
     }
     
-    // Stop keepalive when last client disconnects
-    if (clientCount === 0) {
-      if (isDev) console.log('Last client disconnected, stopping keepalive');
-      clearInterval(keepAliveTimer);
+    if (isDev) {
+      console.log(`Connection closed. Client ID: ${ws.clientId}, Total clients: ${clientCount}`);
     }
   },
   
-  // Handle WebSocket ping frames (different from text "ping" messages)
   ping: (ws, message) => {
     if (isDev) console.log('WebSocket ping frame received');
-    // uWS automatically sends pong response for ping frames
   },
   
-  // Handle WebSocket pong frames
   pong: (ws, message) => {
     if (isDev) console.log('WebSocket pong frame received');
   }
   
 /* }).get('/*', (res, req) => {
-  // Serve static files or simple response
   const url = req.getUrl();
   
   if (url === '/') {
-    res.end('Hello World!');
+    res.end(`
+      <h1>Privileged Receiver WebSocket Server</h1>
+      <p>Connect via WebSocket and:</p>
+      <ul>
+        <li>Send <code>AUTH:${RECEIVER_TOKEN}</code> to become privileged receiver</li>
+        <li>Regular clients' messages will be forwarded to privileged receivers only</li>
+      </ul>
+      <p>Total authenticated receivers: ${authenticatedReceivers.size}</p>
+    `);
   } else {
     res.writeStatus('404 Not Found').end('Not Found');
   } */
-}).listen(port, (success) => {
-  if (success) {
-    console.log(`Server started on port ${port}`);
+  
+}).listen(port, (listenSocket) => {
+  if (listenSocket) {
+    console.log(`Server started on port ${port} in stage ${process.env.NODE_ENV || 'development'}`);
+    console.log(`Receiver token: ${RECEIVER_TOKEN}`);
   } else {
     console.log(`Failed to listen to port ${port}`);
     process.exit(1);
   }
+});
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('Received SIGTERM, shutting down gracefully');
+  app.close();
+});
+
+process.on('SIGINT', () => {
+  console.log('Received SIGINT, shutting down gracefully');
+  app.close();
 });
