@@ -9,6 +9,17 @@ const authenticatedReceivers = new Set();
 const RECEIVER_TOKEN = process.env.RECEIVER_TOKEN || 'SECRET_RECEIVER_TOKEN_123';
 
 let clientCount = 0;
+let keepAliveId = null;
+
+// Keep authenticated clients alive with periodic pings
+const keepAuthClientAlive = () => {
+  keepAliveId = setInterval(() => {
+    for (const client of authenticatedReceivers) {
+      client.send('ping');
+      if (isDev) console.log(`Sent ping to authenticated client: ${client.clientId}`);
+    }
+  }, 10000); // Send ping every 10 seconds
+};
 
 const app = uWS.App({
   compression: uWS.DISABLED,
@@ -44,6 +55,12 @@ const app = uWS.App({
           
           // Subscribe to the privileged topic
           ws.subscribe('privileged-monitor');
+          
+          // Start keep-alive if this is the first authenticated receiver
+          if (authenticatedReceivers.size === 1 && !keepAliveId) {
+            keepAuthClientAlive();
+            if (isDev) console.log('Started keep-alive for authenticated clients');
+          }
           
           //ws.send('AUTH:SUCCESS');
           if (isDev) console.log('Client authenticated as privileged receiver');
@@ -131,6 +148,14 @@ const app = uWS.App({
     // Clean up if this was an authenticated receiver
     if (ws.isReceiver) {
       authenticatedReceivers.delete(ws);
+      
+      // Stop keep-alive if no authenticated receivers remain
+      if (authenticatedReceivers.size === 0 && keepAliveId) {
+        clearInterval(keepAliveId);
+        keepAliveId = null;
+        if (isDev) console.log('Stopped keep-alive - no authenticated clients remaining');
+      }
+      
       if (isDev) {
         console.log(`Privileged receiver disconnected. Remaining receivers: ${authenticatedReceivers.size}`);
       }
@@ -176,7 +201,7 @@ const app = uWS.App({
   }
 });
 
-// Graceful shutdown
+/* // Graceful shutdown
 process.on('SIGTERM', () => {
   console.log('Received SIGTERM, shutting down gracefully');
   app.close();
@@ -185,4 +210,4 @@ process.on('SIGTERM', () => {
 process.on('SIGINT', () => {
   console.log('Received SIGINT, shutting down gracefully');
   app.close();
-});
+}); */
