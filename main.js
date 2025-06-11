@@ -21,7 +21,11 @@ const keepAuthClientAlive = () => {
   }, 10000); // Send ping every 10 seconds
 };
 
-const app = uWS.App({
+const app = uWS.SSLApp({
+  key_file_name: '/etc/letsencrypt/live/dorianairod.com/privkey.pem',
+  cert_file_name: '/etc/letsencrypt/live/dorianairod.com/fullchain.pem',
+  passphrase: '', // Leave empty if your cert has no passphrase
+  ssl_prefer_low_memory_usage: true,
   compression: uWS.DISABLED,
 }).ws('/*', {
   message: (ws, message, opCode) => {
