@@ -26,7 +26,7 @@ const app = uWS.SSLApp({
   cert_file_name: '/etc/letsencrypt/live/dorianairod.com/fullchain.pem',
   passphrase: '', // Leave empty if your cert has no passphrase
   ssl_prefer_low_memory_usage: true,
-  compression: uWS.DISABLED,
+  //compression: uWS.DISABLED,
 }).ws('/*', {
   message: (ws, message, opCode) => {
     try {
