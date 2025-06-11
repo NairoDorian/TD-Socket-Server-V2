@@ -2,7 +2,7 @@ const uWS = require('uWebSockets.js');
 
 const port = parseInt(process.env.PORT) || 3000;
 ///const isDev = process.env.NODE_ENV !== 'production';
-const isDev = false;
+const isDev = true;
 
 // Store authenticated receivers
 const authenticatedReceivers = new Set();
