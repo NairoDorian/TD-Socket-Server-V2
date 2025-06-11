@@ -27,7 +27,7 @@ const app = uWS.SSLApp({
   passphrase: '', // Leave empty if your cert has no passphrase
   ssl_prefer_low_memory_usage: true,
   //compression: uWS.DISABLED,
-}).ws('/*', {
+}).ws('/', {
   message: (ws, message, opCode) => {
     try {
       const msg = Buffer.from(message).toString();
@@ -177,7 +177,8 @@ const app = uWS.SSLApp({
   pong: (ws, message) => {
     if (isDev) console.log('WebSocket pong frame received');
   }
-  
+}).get('/', (res, req) => {
+  res.end(`🟢 WebSocket server is running on dorianairod.com`);
 /* }).get('/*', (res, req) => {
   const url = req.getUrl();
   
